@@ -71,6 +71,7 @@ JoystickController::product_vendor_mapping_t JoystickController::pid_vid_mapping
     { 0x054C, 0x03D5, PS3_MOTION, true},    // PS3 Motion controller
     { 0x054C, 0x05C4, PS4, true},   {0x054C, 0x09CC, PS4, true },
     { 0x0A5C, 0x21E8, PS4, true},
+    { 0x054C, 0x0CE6, PS5, true},
     { 0x046D, 0xC626, SpaceNav, true},  // 3d Connextion Space Navigator, 0x10008
     { 0x046D, 0xC628, SpaceNav, true}  // 3d Connextion Space Navigator, 0x10008
 };
@@ -215,6 +216,7 @@ bool JoystickController::setRumble(uint8_t lValue, uint8_t rValue, uint8_t timeo
     case PS3_MOTION:
         return transmitPS3MotionUserFeedbackMsg();
     case PS4:
+    case PS5:
         return transmitPS4UserFeedbackMsg();
     case XBOXONE:
         // Lets try sending a request to the XBox 1.
@@ -603,6 +605,7 @@ hidclaim_t JoystickController::claim_collection(USBHIDParser *driver, Device_t *
         axis_change_notify_mask_ = (uint64_t) - 1;  // Start off assume all bits
         break;
     case PS4:
+    case PS5:
         additional_axis_usage_page_ = 0xFF00;
         additional_axis_usage_start_ = 0x21;
         additional_axis_usage_count_ = 54;
@@ -1328,6 +1331,7 @@ hidclaim_t JoystickController::claim_bluetooth(BluetoothConnection *btconnection
                         special_process_required = SP_PS3_IDS;      // PS3 maybe needs different IDS.
                         // fall through
                     case PS4:
+                    case PS5:
                     case XBOXONE:
                     case SWITCH:
                         claim_interface = true;
@@ -1362,7 +1366,7 @@ bool JoystickController::process_bluetooth_HID_data(const uint8_t *data, uint16_
     report_id_ = data[0];
 
 
-    if (data[0] == 1) {
+    if (data[0] == 1) {  // PS4, PS5
         //print("  Joystick Data: ");
         // print_hexbytes(data, length);
         if (length > TOTAL_AXIS_COUNT) length = TOTAL_AXIS_COUNT;   // don't overflow arrays...
@@ -1968,6 +1972,9 @@ bool JoystickController::mapNameToJoystickType(const uint8_t *remoteName)
 {
     // Sort of a hack, but try to map the name given from remote to a type...
     if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
+        DBGPrintf("  JoystickController::mapNameToJoystickType %s - set to PS5\n", remoteName);
+        joystickType_ = PS5;
+    } else if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
         DBGPrintf("  JoystickController::mapNameToJoystickType %s - set to PS4\n", remoteName);
         joystickType_ = PS4;
     } else if (strncmp((const char *)remoteName, "PLAYSTATION(R)3", 15) == 0) {
@@ -2004,6 +2011,7 @@ bool JoystickController::remoteNameComplete(const uint8_t *remoteName)
     // Sort of a hack, but try to map the name given from remote to a type...
     if (mapNameToJoystickType(remoteName)) {
         switch (joystickType_) {
+        case PS5: special_process_required = SP_NEED_CONNECT; break;
         case PS4: special_process_required = SP_NEED_CONNECT; break;
         case PS3: special_process_required = SP_PS3_IDS; break;
         case PS3_MOTION: special_process_required = SP_PS3_IDS; break;
@@ -2020,6 +2028,16 @@ void JoystickController::connectionComplete()
 
     DBGPrintf("  JoystickController::connectionComplete %x joystick type %d\n", (uint32_t)this, joystickType_);
     switch (joystickType_) {
+    case PS5:
+    {
+        uint8_t packet[2];
+        packet[0] = 0x43; // HID BT Get_report (0x40) | Report Type (Feature 0x03)
+        packet[1] = 0x02; // Report ID
+        DBGPrintf("Set PS5 report\n");
+        delay(1);
+        btdriver_->sendL2CapCommand(packet, sizeof(packet), BluetoothController::CONTROL_SCID /*0x40*/);
+    }
+    break;
     case PS4:
     {
         uint8_t packet[2];
@@ -2137,6 +2155,38 @@ bool JoystickController::PS4Pair(uint8_t* bdaddr) {
 
     send_Control_packet_active_ = true;
     return driver_->sendControlPacket(0x21, 0x09, 0x0313, 0, sizeof(ps4_pair_msg), txbuf_);
+}
+
+//=============================================================================
+// Retrieve the current pairing information for a PS5...
+//=============================================================================
+bool JoystickController::PS5GetCurrentPairing(uint8_t* bdaddr) {
+    if (!driver_ || (joystickType_ != PS5)) return false;
+    // Try asking PS5 for information
+    memset(txbuf_, 0, 0x10);
+    send_Control_packet_active_ = true;
+    if (!driver_->sendControlPacket(0xA1, 1, 0x312, 0, 0x10, txbuf_))
+        return false;
+    elapsedMillis em = 0;
+    while ((em < 500) && send_Control_packet_active_) ;
+    memcpy(bdaddr, &txbuf_[10], 6);
+    return true;
+}
+
+bool JoystickController::PS5Pair(uint8_t* bdaddr) {
+    if (!driver_ || (joystickType_ != PS5)) return false;
+    // Lets try to setup a message to send...
+    static const uint8_t ps5_pair_msg[] PROGMEM = {0x13, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+                                                   0x56, 0xE8, 0x81, 0x38, 0x08, 0x06, 0x51, 0x41, 0xC0, 0x7F, 0x12, 0xAA, 0xD9, 0x66, 0x3C, 0xCE
+                                                  };
+
+    // Note the above 0xff sare place holders for the bdaddr
+    memcpy(txbuf_, ps5_pair_msg, sizeof(ps5_pair_msg));
+    for (uint8_t i = 0; i < 6; i++)
+        txbuf_[i + 1] = bdaddr[i];
+
+    send_Control_packet_active_ = true;
+    return driver_->sendControlPacket(0x21, 0x09, 0x0313, 0, sizeof(ps5_pair_msg), txbuf_);
 }
 
 //Nintendo Switch functions

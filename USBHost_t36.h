@@ -1026,7 +1026,7 @@ public:
     bool setLEDs(uint8_t lr, uint8_t lg, uint8_t lb);  // sets Leds,
     bool inline setLEDs(uint32_t leds) {return setLEDs((leds >> 16) & 0xff, (leds >> 8) & 0xff, leds & 0xff);}  // sets Leds - passing one arg for all leds
     enum { STANDARD_AXIS_COUNT = 10, ADDITIONAL_AXIS_COUNT = 54, TOTAL_AXIS_COUNT = (STANDARD_AXIS_COUNT + ADDITIONAL_AXIS_COUNT) };
-    typedef enum { UNKNOWN = 0, PS3, PS4, XBOXONE, XBOX360, PS3_MOTION, SpaceNav, SWITCH} joytype_t;
+    typedef enum { UNKNOWN = 0, PS3, PS4, XBOXONE, XBOX360, PS3_MOTION, SpaceNav, SWITCH, PS5} joytype_t;
     joytype_t joystickType() {return joystickType_;}
 
     // PS3 pair function. hack, requires that it be connect4ed by USB and we have the address of the Bluetooth dongle...
@@ -1034,6 +1034,9 @@ public:
 
     bool PS4GetCurrentPairing(uint8_t* bdaddr);
     bool PS4Pair(uint8_t* bdaddr);
+
+    bool PS5GetCurrentPairing(uint8_t* bdaddr);
+    bool PS5Pair(uint8_t* bdaddr);
 	
 	void sw_sendCmd(uint8_t cmd, uint8_t *data, uint16_t size, uint32_t timeout=0);
 	bool sw_getIMUCalValues(float *accel, float *gyro);
@@ -1084,6 +1087,7 @@ private:
     BluetoothController *btdriver_ = nullptr;
 
     joytype_t mapVIDPIDtoJoystickType(uint16_t idVendor, uint16_t idProduct, bool exclude_hid_devices);
+    bool transmitPS5UserFeedbackMsg();
     bool transmitPS4UserFeedbackMsg();
     bool transmitPS3UserFeedbackMsg();
     bool transmitPS3MotionUserFeedbackMsg();
