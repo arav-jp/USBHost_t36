@@ -376,6 +376,7 @@ bool JoystickController::setLEDs(uint8_t lr, uint8_t lg, uint8_t lb)
         case PS3_MOTION:
             return transmitPS3MotionUserFeedbackMsg();
         case PS4:
+        case PS5:
             return transmitPS4UserFeedbackMsg();
         case XBOX360:
             // 0: off, 1: all blink then return to before
@@ -1974,6 +1975,9 @@ bool JoystickController::mapNameToJoystickType(const uint8_t *remoteName)
     if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
         DBGPrintf("  JoystickController::mapNameToJoystickType %s - set to PS5\n", remoteName);
         joystickType_ = PS5;
+    } else if (strncmp((const char *)remoteName, "DualSense Wireless Controller", 9) == 0) {
+        DBGPrintf("  JoystickController::mapNameToJoystickType %s - set to DualSense\n", remoteName);
+        joystickType_ = PS5;
     } else if (strncmp((const char *)remoteName, "Wireless Controller", 19) == 0) {
         DBGPrintf("  JoystickController::mapNameToJoystickType %s - set to PS4\n", remoteName);
         joystickType_ = PS4;
@@ -2030,6 +2034,8 @@ void JoystickController::connectionComplete()
     switch (joystickType_) {
     case PS5:
     {
+        // MARK: report要求
+        // 
         uint8_t packet[2];
         packet[0] = 0x43; // HID BT Get_report (0x40) | Report Type (Feature 0x03)
         packet[1] = 0x02; // Report ID
